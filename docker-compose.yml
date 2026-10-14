@@ -1,0 +1,7 @@
+services:
+  jars-finance-web:
+    build: .
+    container_name: jars_finance_vn
+    ports:
+      - "8080:80"
+    restart: unless-stopped
