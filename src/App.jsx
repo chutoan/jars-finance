@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   Wallet,
   Lock,
@@ -36,7 +36,14 @@ import {
   X,
   FileCode2,
   SlidersHorizontal,
-  Settings
+  Settings,
+  History,
+  Eye,
+  Search,
+  ExternalLink,
+  ArrowRight,
+  Clock,
+  RotateCcw
 } from 'lucide-react';
 
 const STORAGE_KEY = 'jars_finance_habit_vn_v1';
@@ -142,6 +149,112 @@ function getJarIcon(iconName) {
   }
 }
 
+// Calendar-Only Date Picker Component (Chỉ cho phép chọn lịch, không cho nhập bàn phím)
+function DatePickerInput({
+  value,
+  onChange,
+  placeholder = 'Chọn ngày',
+  min = '2000-01-01',
+  max = '2099-12-31',
+  className = '',
+  accentColor = 'emerald'
+}) {
+  const inputRef = useRef(null);
+
+  const handleOpenPicker = () => {
+    try {
+      if (inputRef.current?.showPicker) {
+        inputRef.current.showPicker();
+      } else {
+        inputRef.current?.focus();
+      }
+    } catch (_) {
+      inputRef.current?.focus();
+    }
+  };
+
+  const formattedDate = useMemo(() => {
+    if (!value) return null;
+    const parts = value.split('-');
+    if (parts.length === 3) {
+      return `${parts[2]}/${parts[1]}/${parts[0]}`;
+    }
+    return value;
+  }, [value]);
+
+  const colorStyles = {
+    emerald: {
+      active: 'bg-emerald-950/60 border-emerald-500/50 text-emerald-200 hover:border-emerald-400',
+      icon: 'text-emerald-400'
+    },
+    indigo: {
+      active: 'bg-indigo-950/60 border-indigo-500/50 text-indigo-200 hover:border-indigo-400',
+      icon: 'text-indigo-400'
+    },
+    rose: {
+      active: 'bg-rose-950/60 border-rose-500/50 text-rose-200 hover:border-rose-400',
+      icon: 'text-rose-400'
+    }
+  };
+
+  const currentTheme = colorStyles[accentColor] || colorStyles.emerald;
+
+  return (
+    <div
+      onClick={handleOpenPicker}
+      className={`relative inline-flex items-center gap-2 px-3 py-1.5 rounded-xl border cursor-pointer select-none transition-all group ${
+        value
+          ? currentTheme.active
+          : 'bg-slate-900 border-slate-700 text-slate-400 hover:border-slate-600 hover:text-slate-200'
+      } ${className}`}
+      title="Bấm để mở lịch chọn ngày"
+    >
+      <Calendar className={`w-3.5 h-3.5 flex-shrink-0 ${value ? currentTheme.icon : 'text-slate-400 group-hover:text-slate-300'}`} />
+
+      <span className="text-xs font-semibold tracking-wide">
+        {formattedDate || placeholder}
+      </span>
+
+      {/* Hidden input overlay that handles calendar picker */}
+      <input
+        ref={inputRef}
+        type="date"
+        value={value || ''}
+        min={min}
+        max={max}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={(e) => {
+          // Chặn hoàn toàn việc gõ phím để chỉ cho chọn bằng lịch
+          if (e.key !== 'Tab') {
+            e.preventDefault();
+          }
+        }}
+        onClick={(e) => {
+          try {
+            e.target.showPicker();
+          } catch (_) {}
+        }}
+        className="opacity-0 absolute inset-0 w-full h-full cursor-pointer"
+        tabIndex={0}
+      />
+
+      {value && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onChange('');
+          }}
+          className="ml-auto p-0.5 rounded-full hover:bg-slate-800 text-slate-400 hover:text-rose-400 transition-colors z-10 cursor-pointer"
+          title="Xóa ngày đã chọn"
+        >
+          <X className="w-3 h-3" />
+        </button>
+      )}
+    </div>
+  );
+}
+
 export default function App() {
   // DB Connection State
   const [dbInfo, setDbInfo] = useState({
@@ -186,10 +299,21 @@ export default function App() {
   const [editingPercents, setEditingPercents] = useState({});
   const [overdraftAlert, setOverdraftAlert] = useState(null);
 
+  // Jar detail transactions modal state
+  const [selectedDetailJar, setSelectedDetailJar] = useState(null);
+  const [jarDetailSearch, setJarDetailSearch] = useState('');
+  const [jarDetailTypeFilter, setJarDetailTypeFilter] = useState('all');
+  const [jarTimePreset, setJarTimePreset] = useState('all');
+  const [jarStartDate, setJarStartDate] = useState('');
+  const [jarEndDate, setJarEndDate] = useState('');
+  const [jarFilterMonth, setJarFilterMonth] = useState('all');
+  const [jarFilterYear, setJarFilterYear] = useState('all');
+
   // Form states
   const [selectedJarId, setSelectedJarId] = useState('nec');
   const [expenseAmount, setExpenseAmount] = useState('');
   const [expenseNote, setExpenseNote] = useState('');
+  const [expenseDate, setExpenseDate] = useState(() => new Date().toISOString().slice(0, 10));
 
   const [incomeAmount, setIncomeAmount] = useState('');
   const [incomeNote, setIncomeNote] = useState('Thu nhập lương tháng');
@@ -202,9 +326,14 @@ export default function App() {
   const [newHabitTitle, setNewHabitTitle] = useState('');
   const [newHabitCategory, setNewHabitCategory] = useState('Tài chính');
 
-  // Filter
+  // Filter (Tab 3: Sổ Giao Dịch)
   const [txFilterJar, setTxFilterJar] = useState('all');
   const [txSearch, setTxSearch] = useState('');
+  const [txTimePreset, setTxTimePreset] = useState('all'); // 'all', 'today', 'yesterday', 'week', 'this_month', 'last_month', 'this_year', 'custom'
+  const [txStartDate, setTxStartDate] = useState('');
+  const [txEndDate, setTxEndDate] = useState('');
+  const [txFilterMonth, setTxFilterMonth] = useState('all'); // 'all', '1'..'12'
+  const [txFilterYear, setTxFilterYear] = useState('all'); // 'all', '2025', '2026', ...
 
   // Toast
   const showToast = (msg, type = 'success') => {
@@ -342,7 +471,7 @@ export default function App() {
             jarId: selectedJarId,
             amount,
             note: expenseNote.trim() || `Chi tiêu từ hũ ${targetJar.name}`,
-            date: new Date().toISOString().slice(0, 10)
+            date: expenseDate || new Date().toISOString().slice(0, 10)
           })
         });
 
@@ -370,7 +499,7 @@ export default function App() {
       );
       const newTx = {
         id: `tx-${Date.now()}`,
-        date: new Date().toISOString().slice(0, 10),
+        date: expenseDate || new Date().toISOString().slice(0, 10),
         type: 'expense',
         jarId: selectedJarId,
         amount,
@@ -383,6 +512,7 @@ export default function App() {
     setIsExpenseModalOpen(false);
     setExpenseAmount('');
     setExpenseNote('');
+    setExpenseDate(new Date().toISOString().slice(0, 10));
   };
 
   // 2. DISTRIBUTE INCOME
@@ -700,6 +830,80 @@ export default function App() {
     return list;
   }, []);
 
+  // Date & Time filter helper function
+  const isDateInRange = useCallback((dateStr, timePreset, customStart, customEnd, filterMonth, filterYear) => {
+    if (!dateStr) return true;
+
+    // Month & Year explicit filter
+    if (filterYear && filterYear !== 'all') {
+      if (!dateStr.startsWith(filterYear)) return false;
+    }
+    if (filterMonth && filterMonth !== 'all') {
+      const monthNum = parseInt(dateStr.slice(5, 7), 10);
+      if (monthNum !== parseInt(filterMonth, 10)) return false;
+    }
+
+    // Time preset filter
+    if (!timePreset || timePreset === 'all') return true;
+
+    const today = new Date();
+    const todayStr = today.toISOString().slice(0, 10);
+
+    if (timePreset === 'today') {
+      return dateStr === todayStr;
+    }
+
+    if (timePreset === 'yesterday') {
+      const yest = new Date(today);
+      yest.setDate(yest.getDate() - 1);
+      return dateStr === yest.toISOString().slice(0, 10);
+    }
+
+    if (timePreset === 'week') {
+      const past7 = new Date(today);
+      past7.setDate(past7.getDate() - 7);
+      const past7Str = past7.toISOString().slice(0, 10);
+      return dateStr >= past7Str && dateStr <= todayStr;
+    }
+
+    if (timePreset === 'this_month') {
+      const curMonthStr = today.toISOString().slice(0, 7);
+      return dateStr.startsWith(curMonthStr);
+    }
+
+    if (timePreset === 'last_month') {
+      const lastMonthDate = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+      const lastMonthStr = lastMonthDate.toISOString().slice(0, 7);
+      return dateStr.startsWith(lastMonthStr);
+    }
+
+    if (timePreset === 'this_year') {
+      const curYearStr = String(today.getFullYear());
+      return dateStr.startsWith(curYearStr);
+    }
+
+    if (timePreset === 'custom') {
+      if (customStart && dateStr < customStart) return false;
+      if (customEnd && dateStr > customEnd) return false;
+      return true;
+    }
+
+    return true;
+  }, []);
+
+  // Dynamically extract available years from transaction history
+  const availableYears = useMemo(() => {
+    const curY = new Date().getFullYear();
+    const setY = new Set([curY, curY - 1, curY + 1]);
+    transactions.forEach((t) => {
+      if (t.date && t.date.length >= 4) {
+        const y = parseInt(t.date.slice(0, 4), 10);
+        if (!isNaN(y)) setY.add(y);
+      }
+    });
+    return Array.from(setY).sort((a, b) => b - a);
+  }, [transactions]);
+
   const filteredTransactions = useMemo(() => {
     return transactions.filter((t) => {
       const matchJar =
@@ -710,9 +914,144 @@ export default function App() {
         !txSearch ||
         (t.note && t.note.toLowerCase().includes(txSearch.toLowerCase())) ||
         String(t.amount).includes(txSearch);
-      return matchJar && matchSearch;
+      const matchDate = isDateInRange(
+        t.date,
+        txTimePreset,
+        txStartDate,
+        txEndDate,
+        txFilterMonth,
+        txFilterYear
+      );
+      return matchJar && matchSearch && matchDate;
     });
-  }, [transactions, txFilterJar, txSearch]);
+  }, [transactions, txFilterJar, txSearch, isDateInRange, txTimePreset, txStartDate, txEndDate, txFilterMonth, txFilterYear]);
+
+  // Current selected jar reactive to jars updates
+  const currentDetailJar = useMemo(() => {
+    if (!selectedDetailJar) return null;
+    return jars.find((j) => j.id === selectedDetailJar.id) || selectedDetailJar;
+  }, [jars, selectedDetailJar]);
+
+  // Calculations for the selected jar detail modal
+  const detailJarStats = useMemo(() => {
+    if (!selectedDetailJar) {
+      return { totalIn: 0, totalOut: 0, expenseCount: 0, incomeCount: 0, transferInCount: 0, transferOutCount: 0, transferCount: 0, allCount: 0 };
+    }
+
+    let totalIn = 0;
+    let totalOut = 0;
+    let expenseCount = 0;
+    let incomeCount = 0;
+    let transferInCount = 0;
+    let transferOutCount = 0;
+
+    transactions.forEach((tx) => {
+      if (tx.type === 'expense' && tx.jarId === selectedDetailJar.id) {
+        totalOut += Number(tx.amount) || 0;
+        expenseCount++;
+      } else if (tx.type === 'transfer') {
+        if (tx.jarId === selectedDetailJar.id) {
+          totalOut += Number(tx.amount) || 0;
+          transferOutCount++;
+        } else if (tx.toJarId === selectedDetailJar.id) {
+          totalIn += Number(tx.amount) || 0;
+          transferInCount++;
+        }
+      } else if (tx.type === 'income_distribute') {
+        const share = Math.round(((Number(tx.amount) || 0) * selectedDetailJar.percent) / 100);
+        totalIn += share;
+        incomeCount++;
+      }
+    });
+
+    const transferCount = transferInCount + transferOutCount;
+    const allCount = expenseCount + incomeCount + transferCount;
+
+    return {
+      totalIn,
+      totalOut,
+      expenseCount,
+      incomeCount,
+      transferInCount,
+      transferOutCount,
+      transferCount,
+      allCount
+    };
+  }, [transactions, selectedDetailJar]);
+
+  // Detailed transactions list for selected jar with date/month/year/time filter
+  const detailJarTransactions = useMemo(() => {
+    if (!selectedDetailJar) return [];
+
+    return transactions
+      .map((tx) => {
+        let isRelated = false;
+        let displayAmount = Number(tx.amount) || 0;
+        let txCategory = tx.type; // 'expense', 'income', 'transfer_in', 'transfer_out'
+        let flowType = 'negative'; // 'positive' or 'negative'
+
+        if (tx.type === 'expense' && tx.jarId === selectedDetailJar.id) {
+          isRelated = true;
+          txCategory = 'expense';
+          flowType = 'negative';
+          displayAmount = Number(tx.amount) || 0;
+        } else if (tx.type === 'transfer') {
+          if (tx.jarId === selectedDetailJar.id) {
+            isRelated = true;
+            txCategory = 'transfer_out';
+            flowType = 'negative';
+            displayAmount = Number(tx.amount) || 0;
+          } else if (tx.toJarId === selectedDetailJar.id) {
+            isRelated = true;
+            txCategory = 'transfer_in';
+            flowType = 'positive';
+            displayAmount = Number(tx.amount) || 0;
+          }
+        } else if (tx.type === 'income_distribute') {
+          isRelated = true;
+          txCategory = 'income';
+          flowType = 'positive';
+          displayAmount = Math.round(((Number(tx.amount) || 0) * selectedDetailJar.percent) / 100);
+        }
+
+        if (!isRelated) return null;
+
+        return {
+          ...tx,
+          txCategory,
+          flowType,
+          displayAmount
+        };
+      })
+      .filter(Boolean)
+      .filter((item) => {
+        // Type filter
+        if (jarDetailTypeFilter === 'expense' && item.txCategory !== 'expense') return false;
+        if (jarDetailTypeFilter === 'income' && item.txCategory !== 'income') return false;
+        if (jarDetailTypeFilter === 'transfer' && !item.txCategory.startsWith('transfer')) return false;
+
+        // Date/Time filter
+        const matchDate = isDateInRange(
+          item.date,
+          jarTimePreset,
+          jarStartDate,
+          jarEndDate,
+          jarFilterMonth,
+          jarFilterYear
+        );
+        if (!matchDate) return false;
+
+        // Search filter
+        if (jarDetailSearch) {
+          const s = jarDetailSearch.toLowerCase();
+          const matchNote = item.note && item.note.toLowerCase().includes(s);
+          const matchAmount = String(item.displayAmount).includes(s) || String(item.amount).includes(s);
+          const matchDateStr = item.date && item.date.includes(s);
+          if (!matchNote && !matchAmount && !matchDateStr) return false;
+        }
+        return true;
+      });
+  }, [transactions, selectedDetailJar, jarDetailTypeFilter, jarDetailSearch, isDateInRange, jarTimePreset, jarStartDate, jarEndDate, jarFilterMonth, jarFilterYear]);
 
   const handleOpenTransferForOverdraft = () => {
     if (!overdraftAlert) return;
@@ -761,7 +1100,7 @@ export default function App() {
           <Database className={`w-4 h-4 ${dbInfo.isConnected ? 'text-emerald-400' : 'text-amber-400 animate-pulse'}`} />
           {dbInfo.isConnected ? (
             <span>
-              <strong>🟢 PostgreSQL Đã Kết Nối:</strong> CSDL <code>{dbInfo.database}</code> tại <code>{dbInfo.host}</code>. Mọi giao dịch, hũ và thói quen đang được lưu trữ trực tiếp vào Database!
+              <strong>🟢 PostgreSQL Đã Kết Nối</strong>
             </span>
           ) : (
             <span>
@@ -799,10 +1138,10 @@ export default function App() {
             </div>
             <div>
               <h1 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-amber-400 via-emerald-400 to-teal-200">
-                JarsFinance VN & HabitFlow
+                Dashboard
               </h1>
               <p className="text-xs text-slate-400">
-                Quản Lý 6 Hũ Chi Tiêu • PostgreSQL Database
+                Quản Lý 6 Hũ Chi Tiêu
               </p>
             </div>
           </div>
@@ -978,7 +1317,7 @@ export default function App() {
                   )}
                 </h2>
                 <p className="text-xs text-slate-400">
-                  Tự do tài chính bắt đầu từ việc kiểm soát từng đồng tiền đúng mục đích.
+                  Tự do tài chính bắt đầu từ việc kiểm soát từng đồng tiền đúng mục đích. Nhấp vào từng hũ để xem danh sách chi tiết các giao dịch.
                 </p>
               </div>
 
@@ -1029,9 +1368,19 @@ export default function App() {
                 return (
                   <div
                     key={jar.id}
-                    className={`rounded-2xl p-5 border bg-slate-900/70 hover:bg-slate-900 transition-all shadow-xl flex flex-col justify-between relative group ${
+                    onClick={() => {
+                      setSelectedDetailJar(jar);
+                      setJarDetailTypeFilter('all');
+                      setJarDetailSearch('');
+                      setJarTimePreset('all');
+                      setJarStartDate('');
+                      setJarEndDate('');
+                      setJarFilterMonth('all');
+                      setJarFilterYear('all');
+                    }}
+                    className={`rounded-2xl p-5 border bg-slate-900/70 hover:bg-slate-900 transition-all shadow-xl flex flex-col justify-between relative group cursor-pointer hover:shadow-2xl hover:border-slate-500 hover:-translate-y-1 duration-200 ${
                       isOverdraft
-                        ? 'border-rose-500/60 bg-rose-950/20'
+                        ? 'border-rose-500/60 bg-rose-950/20 hover:border-rose-400'
                         : jar.borderColor || 'border-slate-800'
                     }`}
                   >
@@ -1040,17 +1389,25 @@ export default function App() {
                       <div className="flex items-start justify-between gap-3">
                         <div className="flex items-center gap-3">
                           <div
-                            className={`w-10 h-10 rounded-xl bg-gradient-to-br ${jar.color} flex items-center justify-center text-white shadow-md`}
+                            className={`w-10 h-10 rounded-xl bg-gradient-to-br ${jar.color} flex items-center justify-center text-white shadow-md group-hover:scale-105 transition-transform`}
                           >
                             {getJarIcon(jar.icon)}
                           </div>
                           <div>
-                            <h3 className="font-bold text-white text-base">
-                              {jar.name}
-                            </h3>
-                            <span className="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700/60 font-medium">
-                              Tỷ lệ chuẩn: {jar.percent}%
-                            </span>
+                            <div className="flex items-center gap-2">
+                              <h3 className="font-bold text-white text-base group-hover:text-indigo-200 transition-colors">
+                                {jar.name}
+                              </h3>
+                            </div>
+                            <div className="flex items-center gap-1.5 mt-0.5">
+                              <span className="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700/60 font-medium">
+                                Tỷ lệ chuẩn: {jar.percent}%
+                              </span>
+                              <span className="text-[11px] px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-300 border border-indigo-500/30 font-medium opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
+                                <History className="w-3 h-3 text-indigo-400" />
+                                <span>Xem lịch sử</span>
+                              </span>
+                            </div>
                           </div>
                         </div>
 
@@ -1105,7 +1462,8 @@ export default function App() {
 
                     <div className="mt-5 pt-3 flex gap-2">
                       <button
-                        onClick={() => {
+                        onClick={(e) => {
+                          e.stopPropagation();
                           setSelectedJarId(jar.id);
                           setIsExpenseModalOpen(true);
                         }}
@@ -1116,7 +1474,8 @@ export default function App() {
                       </button>
 
                       <button
-                        onClick={() => {
+                        onClick={(e) => {
+                          e.stopPropagation();
                           setToJarId(jar.id);
                           setFromJarId(jar.id === 'nec' ? 'ffa' : 'nec');
                           setIsTransferModalOpen(true);
@@ -1282,34 +1641,220 @@ export default function App() {
                 </p>
               </div>
 
-              <div className="flex flex-wrap items-center gap-2.5">
-                <input
-                  type="text"
-                  placeholder="Tìm ghi chú, số tiền..."
-                  value={txSearch}
-                  onChange={(e) => setTxSearch(e.target.value)}
-                  className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-emerald-500 w-44"
-                />
-
-                <select
-                  value={txFilterJar}
-                  onChange={(e) => setTxFilterJar(e.target.value)}
-                  className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-emerald-500"
-                >
-                  <option value="all">Tất cả hũ</option>
-                  {jars.map((j) => (
-                    <option key={j.id} value={j.id}>
-                      {j.name}
-                    </option>
-                  ))}
-                </select>
-
+              <div className="flex items-center gap-2">
                 <button
                   onClick={() => setIsExpenseModalOpen(true)}
-                  className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold flex items-center gap-1 cursor-pointer"
+                  className="px-3.5 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold flex items-center gap-1.5 cursor-pointer shadow-lg shadow-rose-600/30 transition-all"
                 >
-                  <Plus className="w-3.5 h-3.5" /> Thêm Chi Tiêu
+                  <Plus className="w-4 h-4" />
+                  <span>Thêm Chi Tiêu</span>
                 </button>
+              </div>
+            </div>
+
+            {/* ADVANCED FILTER PANEL: SEARCH + JARS + DATE/MONTH/YEAR/TIME */}
+            <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xl space-y-4">
+              {/* Row 1: Search & Jar Filter */}
+              <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
+                <div className="md:col-span-7 relative">
+                  <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    placeholder="Tìm theo ghi chú, số tiền..."
+                    value={txSearch}
+                    onChange={(e) => setTxSearch(e.target.value)}
+                    className="w-full bg-slate-800/80 border border-slate-700 rounded-xl pl-9 pr-3 py-2 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+
+                <div className="md:col-span-5 flex gap-2">
+                  <div className="flex-1 relative">
+                    <select
+                      value={txFilterJar}
+                      onChange={(e) => setTxFilterJar(e.target.value)}
+                      className="w-full bg-slate-800/80 border border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-emerald-500"
+                    >
+                      <option value="all">📦 Tất cả 6 hũ</option>
+                      {jars.map((j) => (
+                        <option key={j.id} value={j.id}>
+                          {j.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {(txSearch || txFilterJar !== 'all' || txTimePreset !== 'all' || txFilterMonth !== 'all' || txFilterYear !== 'all' || txStartDate || txEndDate) && (
+                    <button
+                      onClick={() => {
+                        setTxSearch('');
+                        setTxFilterJar('all');
+                        setTxTimePreset('all');
+                        setTxStartDate('');
+                        setTxEndDate('');
+                        setTxFilterMonth('all');
+                        setTxFilterYear('all');
+                      }}
+                      className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer"
+                      title="Đặt lại toàn bộ bộ lọc"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5 text-rose-400" />
+                      <span className="hidden sm:inline">Đặt lại</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Row 2: Date & Time Filter Bar */}
+              <div className="pt-3 border-t border-slate-800/80 space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2.5">
+                  {/* Quick Time Presets */}
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-xs text-slate-400 flex items-center gap-1 mr-1 font-medium">
+                      <Clock className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>Thời gian:</span>
+                    </span>
+
+                    {[
+                      { id: 'all', label: 'Tất cả' },
+                      { id: 'today', label: 'Hôm nay' },
+                      { id: 'yesterday', label: 'Hôm qua' },
+                      { id: 'week', label: '7 ngày qua' },
+                      { id: 'this_month', label: 'Tháng này' },
+                      { id: 'last_month', label: 'Tháng trước' },
+                      { id: 'this_year', label: 'Năm nay' },
+                      { id: 'custom', label: 'Khoảng ngày 📅' }
+                    ].map((preset) => (
+                      <button
+                        key={preset.id}
+                        onClick={() => {
+                          setTxTimePreset(preset.id);
+                          if (preset.id !== 'custom') {
+                            setTxStartDate('');
+                            setTxEndDate('');
+                          }
+                        }}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                          txTimePreset === preset.id
+                            ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/30'
+                            : 'bg-slate-800/80 hover:bg-slate-700 text-slate-300 border border-slate-700/60'
+                        }`}
+                      >
+                        {preset.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Month & Year Selectors */}
+                  <div className="flex items-center gap-2">
+                    {/* Month Select */}
+                    <select
+                      value={txFilterMonth}
+                      onChange={(e) => {
+                        setTxFilterMonth(e.target.value);
+                        if (e.target.value !== 'all' && txTimePreset !== 'all') {
+                          setTxTimePreset('all');
+                        }
+                      }}
+                      className="bg-slate-800/80 border border-slate-700 rounded-lg px-2.5 py-1 text-xs text-slate-200 focus:outline-none focus:border-emerald-500 cursor-pointer"
+                    >
+                      <option value="all">Tất cả tháng</option>
+                      {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+                        <option key={m} value={String(m)}>
+                          Tháng {m}
+                        </option>
+                      ))}
+                    </select>
+
+                    {/* Year Select */}
+                    <select
+                      value={txFilterYear}
+                      onChange={(e) => {
+                        setTxFilterYear(e.target.value);
+                        if (e.target.value !== 'all' && txTimePreset !== 'all') {
+                          setTxTimePreset('all');
+                        }
+                      }}
+                      className="bg-slate-800/80 border border-slate-700 rounded-lg px-2.5 py-1 text-xs text-slate-200 focus:outline-none focus:border-emerald-500 cursor-pointer"
+                    >
+                      <option value="all">Tất cả năm</option>
+                      {availableYears.map((yr) => (
+                        <option key={yr} value={String(yr)}>
+                          Năm {yr}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {/* Custom Date Range Inputs (when 'custom' preset is active) */}
+                {txTimePreset === 'custom' && (
+                  <div className="p-3 rounded-xl bg-slate-800/50 border border-slate-700/60 flex flex-wrap items-center gap-3 animate-in fade-in">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-slate-400">Từ ngày:</span>
+                      <DatePickerInput
+                        value={txStartDate}
+                        onChange={setTxStartDate}
+                        placeholder="Chọn ngày bắt đầu"
+                        accentColor="emerald"
+                      />
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-slate-400">Đến ngày:</span>
+                      <DatePickerInput
+                        value={txEndDate}
+                        onChange={setTxEndDate}
+                        placeholder="Chọn ngày kết thúc"
+                        accentColor="emerald"
+                      />
+                    </div>
+
+                    {(txStartDate || txEndDate) && (
+                      <button
+                        onClick={() => {
+                          setTxStartDate('');
+                          setTxEndDate('');
+                        }}
+                        className="text-xs text-slate-400 hover:text-rose-400 underline cursor-pointer ml-auto"
+                      >
+                        Xóa khoảng ngày
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {/* Filter Stats & Summary */}
+                <div className="flex flex-wrap items-center justify-between text-xs text-slate-400 pt-1 border-t border-slate-800/50">
+                  <div>
+                    Đang tìm thấy <strong>{filteredTransactions.length}</strong> giao dịch
+                    {txFilterMonth !== 'all' && ` • Tháng ${txFilterMonth}`}
+                    {txFilterYear !== 'all' && ` • Năm ${txFilterYear}`}
+                    {txTimePreset === 'today' && ' • Hôm nay'}
+                    {txTimePreset === 'yesterday' && ' • Hôm qua'}
+                    {txTimePreset === 'week' && ' • 7 ngày qua'}
+                    {txTimePreset === 'this_month' && ' • Tháng này'}
+                    {txTimePreset === 'last_month' && ' • Tháng trước'}
+                    {txTimePreset === 'this_year' && ' • Năm nay'}
+                    {txTimePreset === 'custom' && (txStartDate || txEndDate) && ` • Từ ${txStartDate || '...'} đến ${txEndDate || '...'}`}
+                  </div>
+
+                  <div className="flex items-center gap-4 text-xs font-semibold">
+                    <span className="text-rose-400">
+                      Tổng chi: -{formatVND(
+                        filteredTransactions
+                          .filter((t) => t.type === 'expense' || t.type === 'transfer')
+                          .reduce((sum, t) => sum + (t.type === 'expense' ? Number(t.amount) : 0), 0)
+                      )}
+                    </span>
+                    <span className="text-emerald-400">
+                      Tổng thu: +{formatVND(
+                        filteredTransactions
+                          .filter((t) => t.type === 'income_distribute')
+                          .reduce((sum, t) => sum + Number(t.amount), 0)
+                      )}
+                    </span>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -1495,18 +2040,6 @@ export default function App() {
         )}
       </main>
 
-      {/* FOOTER */}
-      <footer className="border-t border-slate-900 bg-slate-950/80 py-6 text-center text-xs text-slate-500">
-        <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-3">
-          <span>
-            JarsFinance VN • Hệ Thống 6 Hũ Chi Tiêu & PostgreSQL Storage
-          </span>
-          <span className="text-slate-600">
-            Node.js Express API & Vite React
-          </span>
-        </div>
-      </footer>
-
       {/* ================= MODALS ================= */}
 
       {/* MODAL DB CONFIG GUIDE */}
@@ -1610,6 +2143,19 @@ export default function App() {
                   autoFocus
                   required
                   className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-rose-500 font-semibold"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-slate-300 mb-1">
+                  Ngày Ghi Nhận Chi Tiêu
+                </label>
+                <DatePickerInput
+                  value={expenseDate}
+                  onChange={setExpenseDate}
+                  placeholder="Chọn ngày chi tiêu"
+                  accentColor="rose"
+                  className="w-full justify-between py-2.5 text-sm"
                 />
               </div>
 
@@ -2124,6 +2670,465 @@ export default function App() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 7: DETAILED JAR TRANSACTIONS */}
+      {selectedDetailJar && currentDetailJar && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-5 overflow-y-auto">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-3xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 my-auto max-h-[92vh] flex flex-col">
+            {/* Modal Top Header Banner with gradient */}
+            <div className={`p-5 sm:p-6 bg-gradient-to-r ${selectedDetailJar.color} relative text-white flex-shrink-0`}>
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex items-center gap-3.5">
+                  <div className="w-12 h-12 rounded-2xl bg-white/20 backdrop-blur-md flex items-center justify-center text-white shadow-lg border border-white/30">
+                    {getJarIcon(selectedDetailJar.icon)}
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-xl font-black tracking-wide drop-shadow-sm">
+                        {currentDetailJar.name}
+                      </h3>
+                      <span className="text-xs px-2.5 py-0.5 rounded-full bg-black/30 backdrop-blur-sm border border-white/20 font-bold uppercase">
+                        {selectedDetailJar.id}
+                      </span>
+                    </div>
+                    <p className="text-xs text-white/90 mt-1 max-w-xl line-clamp-2">
+                      {selectedDetailJar.desc}
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => setSelectedDetailJar(null)}
+                  className="w-8 h-8 rounded-full bg-black/30 hover:bg-black/50 text-white flex items-center justify-center transition-colors cursor-pointer border border-white/20 flex-shrink-0"
+                  title="Đóng (Esc)"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Quick action pill buttons in header */}
+              <div className="flex flex-wrap items-center gap-2 mt-4 pt-3 border-t border-white/20">
+                <button
+                  onClick={() => {
+                    setSelectedJarId(selectedDetailJar.id);
+                    setIsExpenseModalOpen(true);
+                  }}
+                  className="px-3 py-1.5 rounded-xl bg-black/40 hover:bg-black/60 text-white text-xs font-bold border border-white/30 flex items-center gap-1.5 cursor-pointer backdrop-blur-sm transition-all"
+                >
+                  <ArrowDownRight className="w-3.5 h-3.5 text-rose-300" />
+                  <span>Thêm Chi Tiêu</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    setToJarId(selectedDetailJar.id);
+                    setFromJarId(selectedDetailJar.id === 'nec' ? 'ffa' : 'nec');
+                    setIsTransferModalOpen(true);
+                  }}
+                  className="px-3 py-1.5 rounded-xl bg-black/40 hover:bg-black/60 text-white text-xs font-bold border border-white/30 flex items-center gap-1.5 cursor-pointer backdrop-blur-sm transition-all"
+                >
+                  <ArrowRightLeft className="w-3.5 h-3.5 text-amber-300" />
+                  <span>Chuyển Quỹ Vào/Ra</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    setTxFilterJar(selectedDetailJar.id);
+                    setActiveTab('transactions');
+                    setSelectedDetailJar(null);
+                  }}
+                  className="px-3 py-1.5 rounded-xl bg-white/20 hover:bg-white/30 text-white text-xs font-bold border border-white/30 flex items-center gap-1.5 cursor-pointer backdrop-blur-sm transition-all ml-auto"
+                  title="Mở toàn màn hình trong tab Sổ Giao Dịch"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Mở Trong Sổ Giao Dịch</span>
+                  <span className="sm:hidden">Sổ Giao Dịch</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Financial Metrics Cards & Budget Bar */}
+            <div className="p-4 sm:p-5 bg-slate-900 border-b border-slate-800 flex-shrink-0 space-y-4">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="p-3 rounded-2xl bg-slate-800/80 border border-slate-700/60">
+                  <span className="text-[11px] font-medium text-slate-400 block mb-0.5">Số Dư Hiện Tại</span>
+                  <div className={`text-base sm:text-lg font-black ${currentDetailJar.balance < 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
+                    {formatVND(currentDetailJar.balance)}
+                  </div>
+                  <span className="text-[10px] text-slate-400 mt-0.5 block">
+                    {currentDetailJar.balance < 0 ? '⚠️ Bị thâm hụt' : 'Khả dụng chi tiêu'}
+                  </span>
+                </div>
+
+                <div className="p-3 rounded-2xl bg-slate-800/80 border border-slate-700/60">
+                  <span className="text-[11px] font-medium text-slate-400 block mb-0.5">Tổng Tiền Đã Phân Bổ</span>
+                  <div className="text-base sm:text-lg font-black text-white">
+                    {formatVND(currentDetailJar.allocated || 0)}
+                  </div>
+                  <span className="text-[10px] text-slate-400 mt-0.5 block">
+                    Tỷ lệ chuẩn: {currentDetailJar.percent}%
+                  </span>
+                </div>
+
+                <div className="p-3 rounded-2xl bg-slate-800/80 border border-slate-700/60">
+                  <span className="text-[11px] font-medium text-slate-400 block mb-0.5">Tổng Đã Chi Tiêu</span>
+                  <div className="text-base sm:text-lg font-black text-rose-400">
+                    {formatVND(detailJarStats.totalOut)}
+                  </div>
+                  <span className="text-[10px] text-slate-400 mt-0.5 block">
+                    {detailJarStats.expenseCount} khoản chi
+                  </span>
+                </div>
+
+                <div className="p-3 rounded-2xl bg-slate-800/80 border border-slate-700/60">
+                  <span className="text-[11px] font-medium text-slate-400 block mb-0.5">Tiền Nạp / Nhận Thêm</span>
+                  <div className="text-base sm:text-lg font-black text-indigo-400">
+                    {formatVND(detailJarStats.totalIn)}
+                  </div>
+                  <span className="text-[10px] text-slate-400 mt-0.5 block">
+                    {detailJarStats.incomeCount + detailJarStats.transferInCount} lần cộng
+                  </span>
+                </div>
+              </div>
+
+              {/* Progress bar */}
+              <div>
+                <div className="flex justify-between items-center text-xs mb-1.5">
+                  <span className="text-slate-400">Hạn mức ngân sách đã sử dụng</span>
+                  <span className={`font-bold ${
+                    currentDetailJar.balance < 0 ? 'text-rose-400' : 'text-slate-200'
+                  }`}>
+                    {currentDetailJar.allocated > 0
+                      ? Math.min(100, Math.round(((currentDetailJar.allocated - currentDetailJar.balance) / currentDetailJar.allocated) * 100))
+                      : 0}% (Đã dùng: {formatVND((currentDetailJar.allocated || 0) - currentDetailJar.balance)})
+                  </span>
+                </div>
+                <div className="w-full bg-slate-800 rounded-full h-2.5 overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all duration-500 ${
+                      currentDetailJar.balance < 0
+                        ? 'bg-rose-500 w-full'
+                        : 'bg-gradient-to-r from-emerald-500 to-teal-400'
+                    }`}
+                    style={{
+                      width: `${currentDetailJar.balance < 0 ? 100 : Math.max(5, Math.min(100, currentDetailJar.allocated > 0 ? Math.round(((currentDetailJar.allocated - currentDetailJar.balance) / currentDetailJar.allocated) * 100) : 0))}%`
+                    }}
+                  />
+                </div>
+              </div>
+
+              {/* Search & Filter Tabs */}
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 pt-2">
+                {/* Filter Pills */}
+                <div className="flex items-center gap-1.5 bg-slate-800/90 p-1 rounded-xl border border-slate-700/60 overflow-x-auto text-xs">
+                  <button
+                    onClick={() => setJarDetailTypeFilter('all')}
+                    className={`px-3 py-1 rounded-lg font-semibold transition-all cursor-pointer whitespace-nowrap ${
+                      jarDetailTypeFilter === 'all'
+                        ? 'bg-indigo-600 text-white shadow'
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    Tất Cả ({detailJarStats.allCount})
+                  </button>
+                  <button
+                    onClick={() => setJarDetailTypeFilter('expense')}
+                    className={`px-3 py-1 rounded-lg font-semibold transition-all cursor-pointer whitespace-nowrap ${
+                      jarDetailTypeFilter === 'expense'
+                        ? 'bg-rose-600 text-white shadow'
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    Chi Tiêu ({detailJarStats.expenseCount})
+                  </button>
+                  <button
+                    onClick={() => setJarDetailTypeFilter('income')}
+                    className={`px-3 py-1 rounded-lg font-semibold transition-all cursor-pointer whitespace-nowrap ${
+                      jarDetailTypeFilter === 'income'
+                        ? 'bg-emerald-600 text-white shadow'
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    Phân Bổ Lương ({detailJarStats.incomeCount})
+                  </button>
+                  <button
+                    onClick={() => setJarDetailTypeFilter('transfer')}
+                    className={`px-3 py-1 rounded-lg font-semibold transition-all cursor-pointer whitespace-nowrap ${
+                      jarDetailTypeFilter === 'transfer'
+                        ? 'bg-amber-600 text-white shadow'
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    Chuyển Quỹ ({detailJarStats.transferCount})
+                  </button>
+                </div>
+
+                {/* Search Box */}
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    placeholder="Tìm nội dung, số tiền..."
+                    value={jarDetailSearch}
+                    onChange={(e) => setJarDetailSearch(e.target.value)}
+                    className="w-full sm:w-56 bg-slate-800 border border-slate-700 rounded-xl pl-8 pr-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+              </div>
+
+              {/* Jar Modal Date/Time Filter Bar */}
+              <div className="pt-2 border-t border-slate-800/80 flex flex-wrap items-center justify-between gap-2 text-xs">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="text-slate-400 flex items-center gap-1 font-medium mr-1 text-[11px]">
+                    <Clock className="w-3 h-3 text-indigo-400" />
+                    <span>Thời gian:</span>
+                  </span>
+                  {[
+                    { id: 'all', label: 'Tất cả' },
+                    { id: 'today', label: 'Hôm nay' },
+                    { id: 'week', label: '7 ngày qua' },
+                    { id: 'this_month', label: 'Tháng này' },
+                    { id: 'last_month', label: 'Tháng trước' },
+                    { id: 'custom', label: 'Khoảng ngày 📅' }
+                  ].map((preset) => (
+                    <button
+                      key={preset.id}
+                      onClick={() => {
+                        setJarTimePreset(preset.id);
+                        if (preset.id !== 'custom') {
+                          setJarStartDate('');
+                          setJarEndDate('');
+                        }
+                      }}
+                      className={`px-2 py-0.5 rounded-lg text-[11px] font-semibold transition-all cursor-pointer ${
+                        jarTimePreset === preset.id
+                          ? 'bg-indigo-600 text-white shadow'
+                          : 'bg-slate-800/80 hover:bg-slate-700 text-slate-300 border border-slate-700/60'
+                      }`}
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="flex items-center gap-1.5">
+                  <select
+                    value={jarFilterMonth}
+                    onChange={(e) => {
+                      setJarFilterMonth(e.target.value);
+                      if (e.target.value !== 'all' && jarTimePreset !== 'all') {
+                        setJarTimePreset('all');
+                      }
+                    }}
+                    className="bg-slate-800/80 border border-slate-700 rounded-lg px-2 py-0.5 text-[11px] text-slate-200 focus:outline-none focus:border-indigo-500 cursor-pointer"
+                  >
+                    <option value="all">Tất cả tháng</option>
+                    {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+                      <option key={m} value={String(m)}>
+                        Tháng {m}
+                      </option>
+                    ))}
+                  </select>
+
+                  <select
+                    value={jarFilterYear}
+                    onChange={(e) => {
+                      setJarFilterYear(e.target.value);
+                      if (e.target.value !== 'all' && jarTimePreset !== 'all') {
+                        setJarTimePreset('all');
+                      }
+                    }}
+                    className="bg-slate-800/80 border border-slate-700 rounded-lg px-2 py-0.5 text-[11px] text-slate-200 focus:outline-none focus:border-indigo-500 cursor-pointer"
+                  >
+                    <option value="all">Tất cả năm</option>
+                    {availableYears.map((yr) => (
+                      <option key={yr} value={String(yr)}>
+                        Năm {yr}
+                      </option>
+                    ))}
+                  </select>
+
+                  {(jarTimePreset !== 'all' || jarFilterMonth !== 'all' || jarFilterYear !== 'all' || jarStartDate || jarEndDate) && (
+                    <button
+                      onClick={() => {
+                        setJarTimePreset('all');
+                        setJarStartDate('');
+                        setJarEndDate('');
+                        setJarFilterMonth('all');
+                        setJarFilterYear('all');
+                      }}
+                      className="p-1 rounded-md text-slate-400 hover:text-rose-400 transition-colors"
+                      title="Đặt lại bộ lọc thời gian"
+                    >
+                      <RotateCcw className="w-3 h-3" />
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Jar Custom Date Range inputs if custom */}
+              {jarTimePreset === 'custom' && (
+                <div className="p-2.5 rounded-xl bg-slate-800/60 border border-slate-700/60 flex flex-wrap items-center gap-3 text-xs animate-in fade-in">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[11px] text-slate-400">Từ ngày:</span>
+                    <DatePickerInput
+                      value={jarStartDate}
+                      onChange={setJarStartDate}
+                      placeholder="Chọn ngày bắt đầu"
+                      accentColor="indigo"
+                    />
+                  </div>
+
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[11px] text-slate-400">Đến ngày:</span>
+                    <DatePickerInput
+                      value={jarEndDate}
+                      onChange={setJarEndDate}
+                      placeholder="Chọn ngày kết thúc"
+                      accentColor="indigo"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Transaction List Body (Scrollable) */}
+            <div className="flex-1 overflow-y-auto p-4 sm:p-5 divide-y divide-slate-800/80 space-y-2">
+              {detailJarTransactions.length === 0 ? (
+                <div className="py-12 text-center space-y-3">
+                  <div className="w-14 h-14 rounded-2xl bg-slate-800/80 border border-slate-700/60 flex items-center justify-center text-slate-400 mx-auto">
+                    <Calendar className="w-7 h-7 text-slate-500" />
+                  </div>
+                  <div className="text-slate-300 font-semibold text-sm">
+                    Không có giao dịch nào phù hợp
+                  </div>
+                  <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                    {jarDetailSearch || jarDetailTypeFilter !== 'all'
+                      ? 'Không tìm thấy giao dịch nào khớp với bộ lọc hiện tại. Thử xóa tìm kiếm hoặc chọn bộ lọc khác.'
+                      : `Hũ ${selectedDetailJar.name} chưa phát sinh giao dịch nào. Bạn có thể thêm chi tiêu hoặc phân bổ ngân sách ngay.`}
+                  </p>
+                  <button
+                    onClick={() => {
+                      setSelectedJarId(selectedDetailJar.id);
+                      setIsExpenseModalOpen(true);
+                    }}
+                    className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer mt-2"
+                  >
+                    <Plus className="w-3.5 h-3.5 text-rose-400" />
+                    <span>Ghi nhận chi tiêu đầu tiên</span>
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-2.5">
+                  {detailJarTransactions.map((tx) => {
+                    const fromJar = jars.find((j) => j.id === tx.jarId);
+                    const toJar = jars.find((j) => j.id === tx.toJarId);
+
+                    return (
+                      <div
+                        key={tx.id}
+                        className="p-3.5 sm:p-4 rounded-2xl bg-slate-800/40 hover:bg-slate-800/80 border border-slate-800 hover:border-slate-700 transition-all flex items-center justify-between gap-3 group"
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div
+                            className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${
+                              tx.txCategory === 'income'
+                                ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                                : tx.txCategory === 'transfer_in'
+                                ? 'bg-indigo-500/20 text-indigo-400 border border-indigo-500/30'
+                                : tx.txCategory === 'transfer_out'
+                                ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                                : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                            }`}
+                          >
+                            {tx.txCategory === 'income' ? (
+                              <ArrowUpRight className="w-5 h-5" />
+                            ) : tx.txCategory === 'transfer_in' ? (
+                              <ArrowDownRight className="w-5 h-5 text-indigo-400 rotate-180" />
+                            ) : tx.txCategory === 'transfer_out' ? (
+                              <ArrowRightLeft className="w-5 h-5" />
+                            ) : (
+                              <ArrowDownRight className="w-5 h-5" />
+                            )}
+                          </div>
+
+                          <div className="min-w-0">
+                            <div className="font-semibold text-slate-100 text-sm truncate">
+                              {tx.note}
+                            </div>
+                            <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400 mt-1">
+                              <span className="font-mono text-slate-400">{tx.date}</span>
+                              <span>•</span>
+                              {tx.txCategory === 'income' ? (
+                                <span className="px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-medium text-[11px]">
+                                  Phân bổ lương ({selectedDetailJar.percent}%)
+                                </span>
+                              ) : tx.txCategory === 'transfer_in' ? (
+                                <span className="px-2 py-0.5 rounded-md bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 font-medium text-[11px]">
+                                  Nhận bù từ: {fromJar?.name}
+                                </span>
+                              ) : tx.txCategory === 'transfer_out' ? (
+                                <span className="px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-400 border border-amber-500/20 font-medium text-[11px]">
+                                  Chuyển sang: {toJar?.name}
+                                </span>
+                              ) : (
+                                <span className="px-2 py-0.5 rounded-md bg-rose-500/10 text-rose-400 border border-rose-500/20 font-medium text-[11px]">
+                                  Chi tiêu từ hũ
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="text-right flex-shrink-0 flex items-center gap-3">
+                          <div>
+                            <div
+                              className={`font-black text-sm sm:text-base ${
+                                tx.flowType === 'positive'
+                                  ? 'text-emerald-400'
+                                  : 'text-rose-400'
+                              }`}
+                            >
+                              {tx.flowType === 'positive' ? '+' : '-'}
+                              {formatVND(tx.displayAmount)}
+                            </div>
+                            {tx.txCategory === 'income' && tx.amount !== tx.displayAmount && (
+                              <div className="text-[10px] text-slate-500">
+                                (từ tổng {formatVND(tx.amount)})
+                              </div>
+                            )}
+                          </div>
+
+                          <button
+                            onClick={() => handleDeleteTransaction(tx.id)}
+                            className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 opacity-70 group-hover:opacity-100 transition-all cursor-pointer"
+                            title="Xóa giao dịch này"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 bg-slate-950 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400 flex-shrink-0">
+              <div>
+                Hiển thị <strong>{detailJarTransactions.length}</strong> giao dịch của hũ <strong>{selectedDetailJar.name}</strong>
+              </div>
+              <button
+                onClick={() => setSelectedDetailJar(null)}
+                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold cursor-pointer transition-colors"
+              >
+                Đóng
+              </button>
+            </div>
           </div>
         </div>
       )}
