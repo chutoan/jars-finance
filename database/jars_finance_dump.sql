@@ -1,6 +1,6 @@
 -- =============================================================================
 -- JarsFinance & HabitFlow VN - PostgreSQL Database Dump
--- Created At: 2026-10-14T06:38:06.825Z
+-- Created At: 2026-10-14T06:57:06.228Z
 -- =============================================================================
 
 -- 1. DROP EXISTING TABLES
@@ -90,17 +90,17 @@ COMMENT ON COLUMN settings.value IS 'Giá trị cấu hình dạng JSONB (VD: tr
 -- =============================================================================
 
 INSERT INTO jars (id, name, percent, balance, allocated, color, border_color, bg_light, text_color, icon, description)
-VALUES ('nec', 'Thiết yếu (NEC)', 55, 7750000, 13750000, 'from-amber-500 to-orange-600', 'border-amber-500/30', 'bg-amber-500/10', 'text-amber-400', 'ShoppingCart', 'Ăn uống, thuê nhà, hóa đơn, sinh hoạt hàng ngày');
+VALUES ('nec', 'Thiết yếu (NEC)', 50, 13250000, 19250000, 'from-amber-500 to-orange-600', 'border-amber-500/30', 'bg-amber-500/10', 'text-amber-400', 'ShoppingCart', 'Ăn uống, thuê nhà, hóa đơn, sinh hoạt hàng ngày');
 INSERT INTO jars (id, name, percent, balance, allocated, color, border_color, bg_light, text_color, icon, description)
-VALUES ('play', 'Hưởng thụ (PLAY)', 10, 950000, 2500000, 'from-pink-500 to-rose-600', 'border-pink-500/30', 'bg-pink-500/10', 'text-pink-400', 'PartyPopper', 'Cà phê bạn bè, du lịch xả stress, tự thưởng bản thân');
+VALUES ('ffa', 'Tự do tài chính (FFA)', 15, 3500000, 3500000, 'from-emerald-500 to-teal-600', 'border-emerald-500/30', 'bg-emerald-500/10', 'text-emerald-400', 'TrendingUp', 'Đầu tư cổ phiếu, vàng, tạo nguồn thu nhập thụ động');
 INSERT INTO jars (id, name, percent, balance, allocated, color, border_color, bg_light, text_color, icon, description)
-VALUES ('edu', 'Phát triển bản thân (EDU)', 10, 1300000, 2500000, 'from-purple-500 to-violet-600', 'border-purple-500/30', 'bg-purple-500/10', 'text-purple-400', 'BookOpen', 'Sách, khóa học trực tuyến, chứng chỉ nghề nghiệp');
+VALUES ('play', 'Hưởng thụ (PLAY)', 10, 1950000, 3500000, 'from-pink-500 to-rose-600', 'border-pink-500/30', 'bg-pink-500/10', 'text-pink-400', 'PartyPopper', 'Cà phê bạn bè, du lịch xả stress, tự thưởng bản thân');
 INSERT INTO jars (id, name, percent, balance, allocated, color, border_color, bg_light, text_color, icon, description)
-VALUES ('ltss', 'Tiết kiệm dài hạn (LTSS)', 10, 2100000, 2500000, 'from-blue-500 to-indigo-600', 'border-blue-500/30', 'bg-blue-500/10', 'text-blue-400', 'ShieldCheck', 'Quỹ khẩn cấp, mua sắm lớn, bảo hiểm nhân thọ');
+VALUES ('edu', 'Phát triển bản thân (EDU)', 10, 2300000, 3500000, 'from-purple-500 to-violet-600', 'border-purple-500/30', 'bg-purple-500/10', 'text-purple-400', 'BookOpen', 'Sách, khóa học trực tuyến, chứng chỉ nghề nghiệp');
 INSERT INTO jars (id, name, percent, balance, allocated, color, border_color, bg_light, text_color, icon, description)
-VALUES ('ffa', 'Tự do tài chính (FFA)', 10, 2500000, 2500000, 'from-emerald-500 to-teal-600', 'border-emerald-500/30', 'bg-emerald-500/10', 'text-emerald-400', 'TrendingUp', 'Đầu tư cổ phiếu, vàng, tạo nguồn thu nhập thụ động');
+VALUES ('ltss', 'Tiết kiệm dài hạn (LTSS)', 10, 3100000, 3500000, 'from-blue-500 to-indigo-600', 'border-blue-500/30', 'bg-blue-500/10', 'text-blue-400', 'ShieldCheck', 'Quỹ khẩn cấp, mua sắm lớn, bảo hiểm nhân thọ');
 INSERT INTO jars (id, name, percent, balance, allocated, color, border_color, bg_light, text_color, icon, description)
-VALUES ('give', 'Cho đi (GIVE)', 5, 750000, 1250000, 'from-cyan-500 to-sky-600', 'border-cyan-500/30', 'bg-cyan-500/10', 'text-cyan-400', 'HeartHandshake', 'Làm từ thiện, quà biếu ông bà bố mẹ, chia sẻ cộng đồng');
+VALUES ('give', 'Cho đi (GIVE)', 5, 1250000, 1750000, 'from-cyan-500 to-sky-600', 'border-cyan-500/30', 'bg-cyan-500/10', 'text-cyan-400', 'HeartHandshake', 'Làm từ thiện, quà biếu ông bà bố mẹ, chia sẻ cộng đồng');
 
 INSERT INTO habits (id, title, category, completed_dates)
 VALUES ('h-1', 'Ghi chép chi tiêu trước 22:00', 'Tài chính', '["2026-10-11","2026-10-12","2026-10-13","2026-10-14"]'::jsonb);
@@ -117,6 +117,8 @@ INSERT INTO transactions (id, date, type, jar_id, to_jar_id, amount, note)
 VALUES ('tx-1791959115290', '2026-10-14', 'expense', 'nec', NULL, 500000, 'Test Luu PostgreSQL');
 INSERT INTO transactions (id, date, type, jar_id, to_jar_id, amount, note)
 VALUES ('tx-1791959678321', '2026-10-14', 'expense', 'edu', NULL, 500000, 'Đi mua sách');
+INSERT INTO transactions (id, date, type, jar_id, to_jar_id, amount, note)
+VALUES ('tx-1791960379382', '2026-10-14', 'income_distribute', 'all', NULL, 10000000, 'Thu nhập lương tháng');
 
 INSERT INTO settings (key, value)
-VALUES ('strict_lock', 'true'::jsonb);
+VALUES ('strict_lock', 'false'::jsonb);

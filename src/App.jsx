@@ -34,7 +34,9 @@ import {
   Server,
   Check,
   X,
-  FileCode2
+  FileCode2,
+  SlidersHorizontal,
+  Settings
 } from 'lucide-react';
 
 const STORAGE_KEY = 'jars_finance_habit_vn_v1';
@@ -180,6 +182,8 @@ export default function App() {
   const [isIncomeModalOpen, setIsIncomeModalOpen] = useState(false);
   const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
   const [isHabitModalOpen, setIsHabitModalOpen] = useState(false);
+  const [isPercentModalOpen, setIsPercentModalOpen] = useState(false);
+  const [editingPercents, setEditingPercents] = useState({});
   const [overdraftAlert, setOverdraftAlert] = useState(null);
 
   // Form states
@@ -513,6 +517,54 @@ export default function App() {
     setIsTransferModalOpen(false);
     setTransferAmount('');
     setTransferNote('');
+  };
+
+  // 3.5. SAVE CUSTOM JARS PERCENTAGES
+  const handleSavePercentages = async (e) => {
+    e?.preventDefault();
+    const total = Object.values(editingPercents).reduce(
+      (sum, v) => sum + (parseInt(v, 10) || 0),
+      0
+    );
+    if (total !== 100) {
+      showToast(`Tổng tỷ lệ phải bằng đúng 100%! Hiện tại là ${total}%`, 'error');
+      return;
+    }
+
+    const payload = Object.entries(editingPercents).map(([id, percent]) => ({
+      id,
+      percent: parseInt(percent, 10)
+    }));
+
+    if (dbInfo.isConnected) {
+      try {
+        const res = await fetch('/api/jars/percentages', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ percentages: payload })
+        });
+        if (res.ok) {
+          const updatedJars = await fetch('/api/jars').then((r) => r.json());
+          setJars(updatedJars);
+          showToast('✅ Đã lưu cấu hình tỷ lệ phân bổ vào PostgreSQL!');
+          setIsPercentModalOpen(false);
+        } else {
+          const err = await res.json();
+          showToast(`Lỗi: ${err.error}`, 'error');
+        }
+      } catch (err) {
+        showToast(`Lỗi: ${err.message}`, 'error');
+      }
+    } else {
+      setJars((prev) =>
+        prev.map((j) => ({
+          ...j,
+          percent: parseInt(editingPercents[j.id] ?? j.percent, 10)
+        }))
+      );
+      showToast('✅ Đã lưu cấu hình tỷ lệ phân bổ (Cục bộ)!');
+      setIsPercentModalOpen(false);
+    }
   };
 
   // 4. HABITS
@@ -930,7 +982,21 @@ export default function App() {
                 </p>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  onClick={() => {
+                    const initial = {};
+                    jars.forEach((j) => { initial[j.id] = j.percent; });
+                    setEditingPercents(initial);
+                    setIsPercentModalOpen(true);
+                  }}
+                  className="px-3 py-1.5 rounded-lg bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-300 border border-indigo-500/40 text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer"
+                  title="Tùy chỉnh tỷ lệ % phân bổ cho từng hũ"
+                >
+                  <SlidersHorizontal className="w-3.5 h-3.5 text-indigo-400" />
+                  <span>Cài Đặt Tỷ Lệ %</span>
+                </button>
+
                 <button
                   onClick={() => setIsIncomeModalOpen(true)}
                   className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer"
@@ -1630,8 +1696,22 @@ export default function App() {
 
               {incomeAmount && parseFloat(incomeAmount) > 0 && (
                 <div className="p-3 rounded-xl bg-slate-800/80 border border-slate-700/60 space-y-1.5 text-xs">
-                  <div className="font-semibold text-emerald-400 mb-1">
-                    Dự kiến phân bổ:
+                  <div className="flex items-center justify-between text-xs text-emerald-400 font-semibold mb-1">
+                    <span>Dự kiến phân bổ theo tỷ lệ:</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const initial = {};
+                        jars.forEach((j) => { initial[j.id] = j.percent; });
+                        setEditingPercents(initial);
+                        setIsIncomeModalOpen(false);
+                        setIsPercentModalOpen(true);
+                      }}
+                      className="text-amber-400 hover:text-amber-300 underline text-[11px] font-normal cursor-pointer flex items-center gap-1"
+                    >
+                      <SlidersHorizontal className="w-3 h-3" />
+                      <span>Đổi tỷ lệ %</span>
+                    </button>
                   </div>
                   {jars.map((j) => (
                     <div key={j.id} className="flex justify-between text-slate-300">
@@ -1901,6 +1981,146 @@ export default function App() {
                   className="flex-1 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-xs font-semibold text-white shadow-lg shadow-emerald-600/30 cursor-pointer"
                 >
                   Thêm Thói Quen
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 6: CUSTOMIZE JARS PERCENTAGES */}
+      {isPercentModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-lg p-6 shadow-2xl relative animate-in fade-in zoom-in-95 max-h-[90vh] overflow-y-auto">
+            <button
+              onClick={() => setIsPercentModalOpen(false)}
+              className="absolute top-4 right-4 text-slate-400 hover:text-white"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <h3 className="text-lg font-bold text-white flex items-center gap-2 mb-1">
+              <SlidersHorizontal className="w-5 h-5 text-indigo-400" />
+              <span>Cài Đặt Tỷ Lệ Phân Bổ 6 Hũ</span>
+            </h3>
+            <p className="text-xs text-slate-400 mb-4">
+              Tùy chỉnh tỷ lệ phần trăm (%) thu nhập tự động rót vào từng hũ. Tổng tỷ lệ bắt buộc phải bằng <strong>100%</strong>.
+            </p>
+
+            <form onSubmit={handleSavePercentages} className="space-y-4">
+              <div className="space-y-2.5">
+                {jars.map((j) => {
+                  const val = editingPercents[j.id] ?? j.percent;
+                  return (
+                    <div
+                      key={j.id}
+                      className="p-3 rounded-xl bg-slate-800/60 border border-slate-700/60 flex items-center justify-between gap-3"
+                    >
+                      <div className="flex items-center gap-2.5 min-w-[160px]">
+                        <div
+                          className={`w-7 h-7 rounded-lg bg-gradient-to-br ${j.color} flex items-center justify-center text-white text-xs`}
+                        >
+                          {getJarIcon(j.icon)}
+                        </div>
+                        <div>
+                          <div className="text-xs font-bold text-slate-200">
+                            {j.name}
+                          </div>
+                          <div className="text-[10px] text-slate-400">
+                            Mã: {j.id.toUpperCase()}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="number"
+                          min="0"
+                          max="100"
+                          value={val}
+                          onChange={(e) => {
+                            const num = parseInt(e.target.value, 10);
+                            setEditingPercents((prev) => ({
+                              ...prev,
+                              [j.id]: isNaN(num) ? 0 : num
+                            }));
+                          }}
+                          className="w-20 bg-slate-900 border border-slate-600 rounded-lg px-2.5 py-1.5 text-center text-sm font-bold text-white focus:outline-none focus:border-indigo-500"
+                        />
+                        <span className="text-xs font-semibold text-slate-400">%</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Total percentage indicator */}
+              {(() => {
+                const total = Object.values(editingPercents).reduce(
+                  (sum, v) => sum + (parseInt(v, 10) || 0),
+                  0
+                );
+                const isValid = total === 100;
+                return (
+                  <div
+                    className={`p-3 rounded-xl border flex items-center justify-between text-xs font-semibold ${
+                      isValid
+                        ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-300'
+                        : 'bg-rose-950/40 border-rose-500/40 text-rose-300'
+                    }`}
+                  >
+                    <div className="flex items-center gap-1.5">
+                      {isValid ? (
+                        <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                      ) : (
+                        <AlertTriangle className="w-4 h-4 text-rose-400" />
+                      )}
+                      <span>
+                        {isValid
+                          ? 'Tổng tỷ lệ chuẩn xác: 100%'
+                          : `Tổng hiện tại: ${total}% (Cần điều chỉnh: ${100 - total > 0 ? `+${100 - total}%` : `${100 - total}%`})`}
+                      </span>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingPercents({
+                          nec: 55,
+                          ffa: 10,
+                          ltss: 10,
+                          edu: 10,
+                          play: 10,
+                          give: 5
+                        });
+                      }}
+                      className="text-[11px] underline text-slate-300 hover:text-white cursor-pointer"
+                    >
+                      Về mặc định (55/10/10/10/10/5)
+                    </button>
+                  </div>
+                );
+              })()}
+
+              <div className="pt-2 flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setIsPercentModalOpen(false)}
+                  className="flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 cursor-pointer"
+                >
+                  Hủy Bỏ
+                </button>
+                <button
+                  type="submit"
+                  disabled={
+                    Object.values(editingPercents).reduce(
+                      (sum, v) => sum + (parseInt(v, 10) || 0),
+                      0
+                    ) !== 100
+                  }
+                  className="flex-1 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-xs font-bold text-white shadow-lg shadow-indigo-600/30 cursor-pointer transition-all"
+                >
+                  Lưu Tỷ Lệ Vào CSDL
                 </button>
               </div>
             </form>

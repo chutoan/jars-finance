@@ -47,6 +47,34 @@ app.get('/api/jars', async (req, res) => {
   }
 });
 
+// Update Jars Percentages
+app.put('/api/jars/percentages', async (req, res) => {
+  const { percentages } = req.body;
+  if (!Array.isArray(percentages)) {
+    return res.status(400).json({ error: 'Dữ liệu tỷ lệ không hợp lệ' });
+  }
+
+  const total = percentages.reduce((sum, p) => sum + Number(p.percent), 0);
+  if (total !== 100) {
+    return res.status(400).json({ error: `Tổng tỷ lệ 6 hũ phải bằng đúng 100% (Hiện tại là ${total}%)` });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    for (const item of percentages) {
+      await client.query('UPDATE jars SET percent = $1 WHERE id = $2', [Number(item.percent), item.id]);
+    }
+    await client.query('COMMIT');
+    res.json({ success: true, message: 'Đã lưu cấu hình tỷ lệ phân bổ thành công!' });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+});
+
 // Distribute Income to 6 Jars
 app.post('/api/jars/income', async (req, res) => {
   const { amount, note } = req.body;
